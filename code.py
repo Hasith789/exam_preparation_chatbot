@@ -105,19 +105,36 @@ if option == "Ask a Doubt":
     if st.button("Get Answer"):
         if context and question:
             with st.spinner(" Thinking..."):
+                payload = {"inputs": {"question": question, "context": context}}
+                answer = None
                 try:
-                    payload = {"inputs": {"question": question, "context": context}}
                     response = hf_api_with_retries(
-                        "https://api-inference.huggingface.co/models/deepset/roberta-base-squad2",
+                        "https://api-inference.huggingface.co/models/bert-large-uncased-whole-word-masking-finetuned-squad",
                         headers=qa_headers, payload=payload)
                     result = response.json()
-                    answer = result.get("answer", "No answer found.")
+                    answer = result.get("answer", "").strip()
+                except Exception:
+                    pass
+
+                if answer:
                     st.success(" Answer:")
                     st.write(answer)
-                except Exception as e:
-                    st.error(f" Error: {e}")
+                else:
+                    
+                    sentences = context.split(". ")
+                    best_sentence = ""
+                    max_overlap = 0
+                    for s in sentences:
+                        overlap = len(set(s.lower().split()) & set(question.lower().split()))
+                        if overlap > max_overlap:
+                            max_overlap = overlap
+                            best_sentence = s
+                    fallback_answer = best_sentence.strip() if best_sentence else "Sorry, I couldn't find a good answer."
+                    st.success(" Answer:")
+                    st.write(fallback_answer)
         else:
             st.warning("Please provide both context and question.")
+
 
 elif option == "Summarize Notes":
     text = st.text_area(" Paste your notes:", height=250)
@@ -127,25 +144,37 @@ elif option == "Summarize Notes":
                 models = ["facebook/bart-large-cnn", "sshleifer/distilbart-cnn-12-6"]
                 payload = {"inputs": text}
                 summary = None
+
                 for model in models:
                     try:
                         response = requests.post(
                             f"https://api-inference.huggingface.co/models/{model}",
-                            headers=sum_headers, json=payload)
+                            headers=sum_headers, json=payload, timeout=60)
                         result = response.json()
                         if isinstance(result, list) and "summary_text" in result[0]:
                             summary = result[0]["summary_text"]
                             break
-                    except:
+                    except Exception:
                         time.sleep(1)
                         continue
+
+                        
                 if summary:
                     st.success(" Summary:")
                     st.write(summary)
                 else:
-                    st.error(" Failed to summarize text.")
+                    
+                    sentences = text.split(". ")
+                    ranked_sentences = sorted(sentences, key=lambda s: len(s.split()), reverse=True)
+                    fallback_summary = ". ".join(ranked_sentences[:3])
+                    if not fallback_summary.endswith("."):
+                        fallback_summary += "."
+                    st.success(" Summary:")
+                    st.write(fallback_summary)
         else:
             st.warning("Please paste some text.")
+
+
 
 elif option == "Generate Questions":
     text = st.text_area(" Paste a topic or notes:", height=250)
@@ -196,3 +225,4 @@ elif option == "Flashcard Generator":
                     st.warning(" No flashcards created. Please check the formatting or content.")
         else:
             st.warning("Please enter some notes or topic content.")
+
